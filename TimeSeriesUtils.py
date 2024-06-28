@@ -40,3 +40,17 @@ df = pd.read_csv('time_series.csv', parse_dates=['Time'], index_col='Time')
 # For each column, print the unique values and their counts
 for column in df.columns:
     print(f"{column}:\n{df[column].value_counts()}\n")
+
+import pandas as pd
+
+# Read the CSV file
+df = pd.read_csv('time_series.csv', parse_dates=['Time'], index_col='Time')
+
+# Resample to daily frequency
+df_daily = df.resample('D').last()
+
+# Create a new DataFrame to store whether each feature has changed each day
+df_changes = df_daily.diff().notna()
+
+# Print the new DataFrame
+print(df_changes)
