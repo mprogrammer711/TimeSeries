@@ -1,5 +1,8 @@
 import pandas as pd
 
+df = df.drop(df.columns[[0, 1]], axis=1)
+
+
 # Read the CSV file
 df = pd.read_csv('time_series.csv', parse_dates=['Time'], index_col='Time')
 
