@@ -110,3 +110,27 @@ filename = f"data_{date_str}.csv"
 final_df.to_csv(filename, index=False)
 
 print(f"DataFrame saved to {filename}")
+
+
+
+import pandas as pd
+
+# Sample data
+data = {
+    'cut_id': ['20230101', '20230201', '20230301', '20230401123045']
+}
+df = pd.DataFrame(data)
+
+# Custom function to parse dates
+def parse_date(date_str):
+    if len(date_str) == 8:
+        return pd.to_datetime(date_str, format='%Y%m%d')
+    elif len(date_str) == 14:
+        return pd.to_datetime(date_str, format='%Y%m%d%H%M%S').date()
+    else:
+        raise ValueError(f"Unexpected date format: {date_str}")
+
+# Apply the custom function to the 'cut_id' column
+df['cut_id'] = df['cut_id'].apply(parse_date)
+
+print(df)
