@@ -54,3 +54,38 @@ df_changes = df_daily.diff().notna()
 
 # Print the new DataFrame
 print(df_changes)
+
+
+
+
+import pandas as pd
+
+# Path to the Excel file
+file_path = 'file.xlsx'
+
+# Read the Excel file
+excel_file = pd.ExcelFile(file_path)
+
+# Initialize an empty list to store DataFrames
+dfs = []
+
+# Loop through each sheet in the Excel file
+for sheet_name in excel_file.sheet_names:
+    # Read the sheet into a DataFrame
+    df = pd.read_excel(file_path, sheet_name=sheet_name)
+    
+    # Extract rows with 'last Price' and 'PX_Last'
+    last_price_row = df[df.iloc[:, 0] == 'last Price']
+    px_last_row = df[df.iloc[:, 0] == 'PX_Last']
+    
+    # Combine the extracted rows
+    combined_df = pd.concat([last_price_row, px_last_row])
+    
+    # Append the combined DataFrame to the list
+    dfs.append(combined_df)
+
+# Concatenate all DataFrames into a single DataFrame
+final_df = pd.concat(dfs, ignore_index=True)
+
+# Display the final DataFrame
+print(final_df)
