@@ -56,13 +56,11 @@ df_changes = df_daily.diff().notna()
 print(df_changes)
 
 
-
-
 import pandas as pd
 from datetime import datetime
 
 # Path to the Excel file
-file_path = 'file.xlsx'
+file_path = 'ile.xlsx'
 
 # Read the Excel file
 excel_file = pd.ExcelFile(file_path)
@@ -75,18 +73,19 @@ for sheet_name in excel_file.sheet_names:
     # Read the sheet into a DataFrame
     df = pd.read_excel(file_path, sheet_name=sheet_name)
     
-    # Identify the row indices for 'last Price' and 'PX_Last'
-    last_price_idx = df[df.iloc[:, 0] == 'last Price'].index[0]
-    px_last_idx = df[df.iloc[:, 0] == 'PX_Last'].index[0]
+    # Identify the location of 'last Price'
+    last_price_location = df.isin(['last Price']).stack().idxmax()
+    last_price_row_idx = last_price_location[0]
+    last_price_col_idx = last_price_location[1]
     
     # Extract stock names (row just above 'last Price')
-    stock_names = df.iloc[last_price_idx - 1, 1:].values
+    stock_names = df.iloc[last_price_row_idx - 1, last_price_col_idx + 1:].values
     
     # Extract dates (column just before 'last Price' row)
-    dates = df.iloc[:last_price_idx, 0].values
+    dates = df.iloc[last_price_row_idx + 1:, last_price_col_idx].values
     
     # Extract values (rows starting from 'last Price' row)
-    values = df.iloc[last_price_idx + 1:, 1:].values
+    values = df.iloc[last_price_row_idx + 1:, last_price_col_idx + 1:].values
     
     # Create a new DataFrame with the extracted data
     extracted_df = pd.DataFrame(values, columns=stock_names, index=dates)
