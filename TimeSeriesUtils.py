@@ -59,6 +59,7 @@ print(df_changes)
 
 
 import pandas as pd
+from datetime import datetime
 
 # Path to the Excel file
 file_path = 'file.xlsx'
@@ -74,18 +75,39 @@ for sheet_name in excel_file.sheet_names:
     # Read the sheet into a DataFrame
     df = pd.read_excel(file_path, sheet_name=sheet_name)
     
-    # Extract rows with 'last Price' and 'PX_Last'
-    last_price_row = df[df.iloc[:, 0] == 'last Price']
-    px_last_row = df[df.iloc[:, 0] == 'PX_Last']
+    # Identify the row indices for 'last Price' and 'PX_Last'
+    last_price_idx = df[df.iloc[:, 0] == 'last Price'].index[0]
+    px_last_idx = df[df.iloc[:, 0] == 'PX_Last'].index[0]
     
-    # Combine the extracted rows
-    combined_df = pd.concat([last_price_row, px_last_row])
+    # Extract stock names (row just above 'last Price')
+    stock_names = df.iloc[last_price_idx - 1, 1:].values
     
-    # Append the combined DataFrame to the list
-    dfs.append(combined_df)
+    # Extract dates (column just before 'last Price' row)
+    dates = df.iloc[:last_price_idx, 0].values
+    
+    # Extract values (rows starting from 'last Price' row)
+    values = df.iloc[last_price_idx + 1:, 1:].values
+    
+    # Create a new DataFrame with the extracted data
+    extracted_df = pd.DataFrame(values, columns=stock_names, index=dates)
+    
+    # Append the extracted DataFrame to the list
+    dfs.append(extracted_df)
 
 # Concatenate all DataFrames into a single DataFrame
-final_df = pd.concat(dfs, ignore_index=True)
+final_df = pd.concat(dfs, axis=1)
+
+# Reset the index to have dates as a column
+final_df.reset_index(inplace=True)
+final_df.rename(columns={'index': 'Date'}, inplace=True)
 
 # Display the final DataFrame
 print(final_df)
+
+# Save the final DataFrame to a CSV file with today's date
+today = datetime.today()
+date_str = today.strftime('%Y-%m-%d')
+filename = f"data_{date_str}.csv"
+final_df.to_csv(filename, index=False)
+
+print(f"DataFrame saved to {filename}")
