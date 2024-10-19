@@ -134,3 +134,38 @@ def parse_date(date_str):
 df['cut_id'] = df['cut_id'].apply(parse_date)
 
 print(df)
+
+import xgboost as xgb
+from xgboost.callback import TrainingCallback
+
+class AdaptiveLearningRate(TrainingCallback):
+    def __init__(self, initial_lr, decay_factor, decay_step):
+        self.initial_lr = initial_lr
+        self.decay_factor = decay_factor
+        self.decay_step = decay_step
+
+    def after_iteration(self, model, epoch, evals_log):
+        if epoch % self.decay_step == 0 and epoch != 0:
+            new_lr = self.initial_lr * (self.decay_factor ** (epoch // self.decay_step))
+            model.set_param('learning_rate', new_lr)
+            print(f"Updated learning rate to {new_lr:.6f} at epoch {epoch}")
+        return False
+
+# Define the XGBoost model with adaptive learning rate
+initial_lr = 0.1
+decay_factor = 0.9
+decay_step = 10
+
+xgb_model = xgb.XGBRegressor(
+    objective='reg:squarederror',
+    n_estimators=100,
+    learning_rate=initial_lr,
+    tree_method='hist'
+)
+
+# Fit the model with the adaptive learning rate callback
+xgb_model.fit(
+    X_train,
+    y_train,
+    callbacks=[AdaptiveLearningRate(initial_lr, decay_factor, decay_step)]
+)
