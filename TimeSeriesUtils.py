@@ -169,3 +169,27 @@ xgb_model.fit(
     y_train,
     callbacks=[AdaptiveLearningRate(initial_lr, decay_factor, decay_step)]
 )
+
+
+import pandas as pd
+
+# Load the main CSV file
+main_df = pd.read_csv('main_data.csv', parse_dates=['date'])
+
+# Load the historical CSV file
+history_df = pd.read_csv('history_data.csv', parse_dates=['date'])
+
+# Merge the DataFrames on the date column
+combined_df = pd.merge(main_df, history_df, on='date', how='left', suffixes=('', '_history'))
+
+# Fill missing values in the main DataFrame using the historical data
+for feature in ['feature1', 'feature2']:
+    combined_df[feature].fillna(combined_df[f'{feature}_history'], inplace=True)
+
+# Drop the historical columns
+combined_df.drop(columns=[f'{feature}_history' for feature in ['feature1', 'feature2']], inplace=True)
+
+# Save the combined DataFrame to a new CSV file
+combined_df.to_csv('combined_data.csv', index=False)
+
+print(combined_df.head())
