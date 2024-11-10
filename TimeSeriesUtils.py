@@ -26,6 +26,142 @@ import pandas as pd
 # Read the CSV file
 df = pd.read_csv('time_series.csv', parse_dates=['Time'], index_col='Time')
 
+
+
+def main(file_path, features, target, context_features, n_timesteps, encoding_dim, hidden_dim, lstm_hidden_size, transformer_hidden_size, conv_hidden_size, context_size, output_size, lstm_num_layers, transformer_num_layers, transformer_num_heads, conv_kernel_size, dropout, learning_rate, n_epochs, ae_n_epochs, batch_size, n_splits=5):
+    # Load and preprocess data
+    df, scaler_target, scaler_context = load_and_preprocess_data(file_path, features, target, context_features)
+
+    # Prepare data
+    X, y, context = prepare_data(df, features, target, context_features, n_timesteps)
+
+    # Split data into training and test sets
+    X_train, X_test, y_train, y_test, context_train, context_test = train_test_split(X, y, context, test_size=0.2, random_state=42)
+
+    # Train the autoencoder on the entire training set
+    train_dataset = TensorDataset(X_train)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=False)
+
+    # Define the input dimension, encoding dimension, and hidden dimension
+    input_dim = X_train.size(2)
+
+    # Initialize the autoencoder
+    autoencoder = Autoencoder(input_dim, encoding_dim, hidden_dim)
+
+    # Define the optimizer and loss function for autoencoder
+    ae_optimizer = optim.AdamW(autoencoder.parameters(), lr=0.001)
+    ae_criterion = nn.MSELoss()
+    ae_scheduler = optim.lr_scheduler.ReduceLROnPlateau(ae_optimizer, mode='min', factor=0.1, patience=5, verbose=True)
+
+    # Train the autoencoder
+    train_autoencoder(autoencoder, train_loader, ae_n_epochs, ae_optimizer, ae_criterion, ae_scheduler)
+
+    # Encode the entire training and test data
+    encoded_train = encode_data(autoencoder, X_train.view(-1, X_train.size(2)))
+    encoded_test = encode_data(autoencoder, X_test.view(-1, X_test.size(2)))
+
+    # Reshape the encoded features back to the original sequence shape
+    encoded_train = encoded_train.view(X_train.size(0), X_train.size(1), -1)
+    encoded_test = encoded_test.view(X_test.size(0), X_test.size(1), -1)
+
+    # Define K-Fold cross-validation
+    kf = KFold(n_splits=n_splits, shuffle=False, random_state=42)
+
+    hybrid_train_preds = []
+    hybrid_val_preds = []
+    true_values = []
+
+    for fold, (train_index, val_index) in enumerate(kf.split(encoded_train)):
+        print(f"Fold {fold+1}/{n_splits}")
+
+        X_train_fold, X_val_fold = encoded_train[train_index], encoded_train[val_index]
+        y_train_fold, y_val_fold = y_train[train_index], y_train[val_index]
+        context_train_fold, context_val_fold = context_train[train_index], context_train[val_index]
+
+        # Create DataLoader for hybrid model training
+        train_dataset = TensorDataset(X_train_fold, y_train_fold, context_train_fold)
+        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=False)
+        val_dataset = TensorDataset(X_val_fold, y_val_fold, context_val_fold)
+        val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+
+        # Initialize model
+        input_size = X_train_fold.size(2)  # Encoded feature size
+        model = HybridForecastingModel(input_size, conv_hidden_size, lstm_hidden_size, transformer_hidden_size, context_size, output_size, lstm_num_layers, transformer_num_layers, transformer_num_heads, conv_kernel_size, dropout)
+        optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=1e-5)  # L2 regularization
+        criterion = nn.MSELoss()
+        scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=5, verbose=True)
+
+        # Train the hybrid model with early stopping
+        train_hybrid(model, train_loader, val_loader, n_epochs, optimizer, criterion, scheduler)
+
+        # Get hybrid model predictions for XGBoost training
+        model.eval()
+        with torch.no_grad():
+            fold_train_preds = []
+            for batch in train_loader:
+                past_data, _, context_data = batch
+                hybrid_output = model(past_data, context_data)
+                fold_train_preds.append(hybrid_output.cpu().numpy())
+            fold_train_preds = np.concatenate(fold_train_preds, axis=0)
+            hybrid_train_preds.append(fold_train_preds)
+
+            fold_val_preds = []
+            for batch in val_loader:
+                past_data, _, context_data = batch
+                hybrid_output = model(past_data, context_data)
+                fold_val_preds.append(hybrid_output.cpu().numpy())
+            fold_val_preds = np.concatenate(fold_val_preds, axis=0)
+            hybrid_val_preds.append(fold_val_preds)
+
+        # Store true values for evaluation
+        true_values.append(y_val_fold.numpy())
+
+    # Concatenate all predictions and true values
+    hybrid_train_preds = np.concatenate(hybrid_train_preds, axis=0)
+    hybrid_val_preds = np.concatenate(hybrid_val_preds, axis=0)
+    true_values = np.concatenate(true_values, axis=0)
+
+    # Train XGBoost model on the entire training set
+    dtrain = xgb.DMatrix(hybrid_train_preds, label=y_train.numpy())
+    dval = xgb.DMatrix(hybrid_val_preds, label=true_values)
+    evals = [(dtrain, 'train'), (dval, 'eval')]
+
+    params = {
+        'objective': 'reg:squarederror',
+        'eval_metric': 'rmse',
+        'learning_rate': 0.01,
+        'max_depth': 6,
+        'subsample': 0.8,
+        'colsample_bytree': 0.8,
+        'seed': 42
+    }
+
+    xgb_model = xgb.train(params, dtrain, num_boost_round=1000, evals=evals, early_stopping_rounds=10, verbose_eval=True)
+
+    # Evaluate the XGBoost model on the test set
+    test_dataset = TensorDataset(encoded_test, y_test, context_test)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+
+    model.eval()
+    with torch.no_grad():
+        hybrid_test_preds = []
+        for batch in test_loader:
+            past_data, _, context_data = batch
+            hybrid_output = model(past_data, context_data)
+            hybrid_test_preds.append(hybrid_output.cpu().numpy())
+        hybrid_test_preds = np.concatenate(hybrid_test_preds, axis=0)
+
+    dtest = xgb.DMatrix(hybrid_test_preds)
+    predictions = xgb_model.predict(dtest)
+
+    # Inverse transform the predictions to the original scale
+    predictions_original_scale = scaler_target.inverse_transform(predictions.reshape(-1, 1))
+    true_values_original_scale = scaler_target.inverse_transform(y_test.numpy().reshape(-1, 1))
+
+    # Print or return the results as needed
+    print(f"Predictions: {predictions_original_scale}")
+    print(f"True Values: {true_values_original_scale}")
+
 # Check for duplicate rows
 duplicates = df.duplicated(keep=False)
 
