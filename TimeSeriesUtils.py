@@ -249,6 +249,73 @@ print(f"DataFrame saved to {filename}")
 
 
 
+hybrid_predictions = []
+    true_values = []
+    hybrid_train_preds = []
+    hybrid_val_preds = []
+
+    for fold, (train_index, val_index) in enumerate(kf.split(encoded_train)):
+        print(f"Fold {fold+1}/{n_splits}")
+
+        X_train_fold, X_val_fold = encoded_train[train_index], encoded_train[val_index]
+        y_train_fold, y_val_fold = y_train[train_index], y_train[val_index]
+        context_train_fold, context_val_fold = context_train[train_index], context_train[val_index]
+
+        # Create DataLoader for hybrid model training
+        train_dataset = TensorDataset(X_train_fold, y_train_fold, context_train_fold)
+        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=False)
+        val_dataset = TensorDataset(X_val_fold, y_val_fold, context_val_fold)
+        val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+
+        # Initialize hybrid model
+        input_size = X_train_fold.size(2)  # Encoded feature size
+        model = HybridForecastingModel(input_size, conv_hidden_size, lstm_hidden_size, transformer_hidden_size, context_size, output_size, lstm_num_layers, transformer_num_layers, transformer_num_heads, conv_kernel_size, dropout)
+        optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=1e-5)  # L2 regularization
+        criterion = nn.MSELoss()
+        scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=5, verbose=True)
+
+        # Train the hybrid model with early stopping
+        model = train_hybrid(model, train_loader, val_loader, n_epochs, optimizer, criterion, scheduler)
+
+        # Get hybrid model predictions for training and validation sets
+        model.eval()
+        with torch.no_grad():
+            # Get predictions for training set
+            hybrid_train_preds_fold = []
+            for batch in train_loader:
+                past_data, _, context_data = batch
+                hybrid_output = model(past_data, context_data)
+                hybrid_train_preds_fold.append(hybrid_output.cpu().numpy())
+            hybrid_train_preds_fold = np.concatenate(hybrid_train_preds_fold, axis=0)
+
+            # Get predictions for validation set
+            hybrid_val_preds_fold = []
+            for batch in val_loader:
+                past_data, _, context_data = batch
+                hybrid_output = model(past_data, context_data)
+                hybrid_val_preds_fold.append(hybrid_output.cpu().numpy())
+            hybrid_val_preds_fold = np.concatenate(hybrid_val_preds_fold, axis=0)
+
+        hybrid_train_preds.append(hybrid_train_preds_fold)
+        hybrid_val_preds.append(hybrid_val_preds_fold)
+        true_values.append(y_val_fold.numpy())
+
+    # Concatenate all hybrid model predictions and true values
+    hybrid_train_preds = np.concatenate(hybrid_train_preds, axis=0)
+    hybrid_val_preds = np.concatenate(hybrid_val_preds, axis=0)
+    true_values = np.concatenate(true_values, axis=0)
+
+    # Train XGBoost model using hybrid model predictions as features
+    print("Training XGBoost on hybrid model predictions...")
+    xgb_model = train_xgboost_with_callback(hybrid_train_preds, y_train.numpy(), hybrid_val_preds, true_values)
+
+    # Evaluate the XGBoost model on the test set
+    dtest = xgb.DMatrix(hybrid_val_preds)  # Using hybrid model predictions as input
+    xgb_predictions = xgb_model.predict(dtest)
+
+    # Inverse transform the predictions to the original scale
+    xgb_predictions_original_scale = scaler_target.inverse_transform(xgb_predictions.reshape(-1, 1))
+    true_values_original_scale = scaler_target.inverse_transform(true_values.reshape(-1, 1))
 
 
 
