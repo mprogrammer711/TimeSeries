@@ -378,6 +378,34 @@ class Autoencoder(nn.Module):
                 nn.init.xavier_uniform_(layer.weight)
                 nn.init.constant_(layer.bias, 0)
 
+    class LSTMDecoderWithAttention(nn.Module):
+    def __init__(self, hidden_size, output_size, num_layers, dropout, context_size):
+        super(LSTMDecoderWithAttention, self).__init__()
+        self.attention = Attention(hidden_size)
+        self.lstm = nn.LSTM(hidden_size + context_size, hidden_size, num_layers, batch_first=True, dropout=dropout)
+        self.fc = nn.Linear(hidden_size, output_size)
+
+    def forward(self, encoder_outputs, hidden, cell, current_context, targets=None, teacher_forcing_ratio=0.5):
+        batch_size = encoder_outputs.size(0)
+        seq_len = encoder_outputs.size(1)
+        output_size = self.fc.out_features
+
+        outputs = torch.zeros(batch_size, seq_len, output_size).to(encoder_outputs.device)
+        input = current_context.unsqueeze(1)  # First input to the decoder is the current context
+
+        for t in range(seq_len):
+            attn_weights = self.attention(hidden[-1], encoder_outputs)
+            context = torch.bmm(attn_weights.unsqueeze(1), encoder_outputs).squeeze(1)
+            lstm_input = torch.cat([context, input.squeeze(1)], dim=1).unsqueeze(1)  # Add sequence dimension
+            output, (hidden, cell) = self.lstm(lstm_input, (hidden, cell))
+            output = self.fc(output.squeeze(1))
+            outputs[:, t, :] = output
+
+            teacher_force = torch.rand(1).item() < teacher_forcing_ratio
+            input = targets[:, t, :].unsqueeze(1) if teacher_force else output.unsqueeze(1)
+
+        return outputs, attn_weights
+
     def forward(self, x):
         encoded = self.encoder(x)
         decoded = self.decoder(encoded)
