@@ -318,5 +318,24 @@ hybrid_predictions = []
     true_values_original_scale = scaler_target.inverse_transform(true_values.reshape(-1, 1))
 
 
+# Define Convolutional Layers with Batch Normalization using nn.Sequential
+class ConvLayers(nn.Module):
+    def __init__(self, input_size, hidden_size, kernel_size, dropout):
+        super(ConvLayers, self).__init__()
+        self.layers = nn.Sequential(
+            nn.Conv1d(input_size, hidden_size, kernel_size, padding=(kernel_size - 1) // 2),
+            nn.BatchNorm1d(hidden_size),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Conv1d(hidden_size, hidden_size, kernel_size, padding=(kernel_size - 1) // 2),
+            nn.BatchNorm1d(hidden_size),
+            nn.ReLU(),
+            nn.Dropout(dropout)
+        )
 
+    def forward(self, x):
+        x = x.permute(0, 2, 1)  # Change shape to (batch_size, input_size, seq_len)
+        x = self.layers(x)
+        x = x.permute(0, 2, 1)  # Change shape back to (batch_size, seq_len, hidden_size)
+        return x
 
