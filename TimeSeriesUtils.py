@@ -339,3 +339,46 @@ class ConvLayers(nn.Module):
         x = x.permute(0, 2, 1)  # Change shape back to (batch_size, seq_len, hidden_size)
         return x
 
+
+class Autoencoder(nn.Module):
+    def __init__(self, input_dim, encoding_dim, hidden_dims):
+        super(Autoencoder, self).__init__()
+        
+        # Define the encoder
+        encoder_layers = []
+        current_dim = input_dim
+        for hidden_dim in hidden_dims:
+            encoder_layers.append(nn.Linear(current_dim, hidden_dim))
+            encoder_layers.append(nn.ReLU())
+            current_dim = hidden_dim
+        encoder_layers.append(nn.Linear(current_dim, encoding_dim))
+        encoder_layers.append(nn.ReLU())
+        self.encoder = nn.Sequential(*encoder_layers)
+        
+        # Define the decoder
+        decoder_layers = []
+        current_dim = encoding_dim
+        for hidden_dim in reversed(hidden_dims):
+            decoder_layers.append(nn.Linear(current_dim, hidden_dim))
+            decoder_layers.append(nn.ReLU())
+            current_dim = hidden_dim
+        decoder_layers.append(nn.Linear(current_dim, input_dim))
+        decoder_layers.append(nn.Sigmoid())
+        self.decoder = nn.Sequential(*decoder_layers)
+        
+        self.init_weights()
+
+    def init_weights(self):
+        for layer in self.encoder:
+            if isinstance(layer, nn.Linear):
+                nn.init.xavier_uniform_(layer.weight)
+                nn.init.constant_(layer.bias, 0)
+        for layer in self.decoder:
+            if isinstance(layer, nn.Linear):
+                nn.init.xavier_uniform_(layer.weight)
+                nn.init.constant_(layer.bias, 0)
+
+    def forward(self, x):
+        encoded = self.encoder(x)
+        decoded = self.decoder(encoded)
+        return encoded, decoded
