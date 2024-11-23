@@ -247,3 +247,83 @@ final_df.to_csv(filename, index=False)
 
 print(f"DataFrame saved to {filename}")
 
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Load the data
+file_path = 'your_data.csv'
+df = pd.read_csv(file_path)
+
+# Define the target feature
+target_feature = 'target'
+
+# Define parameters for momentum and moving average
+momentum_window = 5
+moving_average_window = 10
+n_steps = 10
+
+# Calculate momentum
+df['momentum'] = df[target_feature].diff(momentum_window)
+
+# Calculate moving average
+df['moving_average'] = df[target_feature].rolling(window=moving_average_window).mean()
+
+# Drop NaN values created by diff and rolling
+df.dropna(inplace=True)
+
+# Forecast the next n steps using the real previous data
+def forecast_momentum(df, target_feature, n_steps, momentum_window):
+    forecasts = []
+    for i in range(n_steps):
+        # Calculate momentum for the current step
+        momentum = df[target_feature].iloc[-momentum_window:].diff().sum()
+        
+        # Forecast the next value
+        forecast = df[target_feature].iloc[-1] + momentum
+        
+        # Append the forecast to the list
+        forecasts.append(forecast)
+        
+        # Append the forecast to the dataframe to use it for the next step
+        df = df.append({target_feature: forecast}, ignore_index=True)
+    
+    return forecasts
+
+def forecast_moving_average(df, target_feature, n_steps, moving_average_window):
+    forecasts = []
+    for i in range(n_steps):
+        # Calculate moving average for the current step
+        moving_average = df[target_feature].iloc[-moving_average_window:].mean()
+        
+        # Forecast the next value
+        forecast = moving_average
+        
+        # Append the forecast to the list
+        forecasts.append(forecast)
+        
+        # Append the forecast to the dataframe to use it for the next step
+        df = df.append({target_feature: forecast}, ignore_index=True)
+    
+    return forecasts
+
+# Perform the forecasting
+momentum_forecasts = forecast_momentum(df.copy(), target_feature, n_steps, momentum_window)
+moving_average_forecasts = forecast_moving_average(df.copy(), target_feature, n_steps, moving_average_window)
+
+# Print the forecasts
+print(f'Forecasts for the next {n_steps} steps using momentum strategy:')
+print(momentum_forecasts)
+print(f'Forecasts for the next {n_steps} steps using moving average strategy:')
+print(moving_average_forecasts)
+
+# Plot the results
+plt.figure(figsize=(10, 6))
+plt.plot(df[target_feature], label='Real Data')
+plt.plot(range(len(df), len(df) + n_steps), momentum_forecasts, label='Momentum Forecasts', color='red')
+plt.plot(range(len(df), len(df) + n_steps), moving_average_forecasts, label='Moving Average Forecasts', color='green')
+plt.legend()
+plt.xlabel('Time')
+plt.ylabel('Value')
+plt.title('Real Data and Forecasts')
+plt.show()
