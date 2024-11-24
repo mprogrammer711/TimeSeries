@@ -327,3 +327,55 @@ plt.xlabel('Time')
 plt.ylabel('Value')
 plt.title('Real Data and Forecasts')
 plt.show()
+
+
+import os
+import pandas as pd
+
+# Define the folder containing the forecast CSV files
+folder_path = 'forecast'
+
+# Get a list of all CSV files in the folder
+csv_files = [f for f in os.listdir(folder_path) if f.endswith('.csv')]
+
+# Dictionary to store aggregated data for each instrument
+instrument_data = {}
+
+# Iterate through each CSV file
+for csv_file in csv_files:
+    # Extract the date from the file name
+    date = csv_file.split('_')[1].split('.')[0]
+    
+    # Read the CSV file into a DataFrame
+    file_path = os.path.join(folder_path, csv_file)
+    df = pd.read_csv(file_path)
+    
+    # Add the date column to the DataFrame
+    df['date'] = date
+    
+    # Iterate through each row in the DataFrame
+    for index, row in df.iterrows():
+        instrument = row['real instrument name']
+        
+        # If the instrument is not already in the dictionary, initialize it
+        if instrument not in instrument_data:
+            instrument_data[instrument] = []
+        
+        # Append the row data to the instrument's list
+        instrument_data[instrument].append(row)
+
+# Save the aggregated data for each instrument to separate files
+output_folder = 'aggregated_forecasts'
+os.makedirs(output_folder, exist_ok=True)
+
+for instrument, data in instrument_data.items():
+    # Convert the list of rows to a DataFrame
+    instrument_df = pd.DataFrame(data)
+    
+    # Define the output file path
+    output_file = os.path.join(output_folder, f'{instrument}_forecasts.csv')
+    
+    # Save the DataFrame to a CSV file
+    instrument_df.to_csv(output_file, index=False)
+
+print("Aggregated forecasts saved successfully.")
