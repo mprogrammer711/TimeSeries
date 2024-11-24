@@ -409,3 +409,253 @@ for instrument, data in instrument_data.items():
     plt.close()
 
 print("Aggregated forecasts and plots saved successfully.")
+
+
+
+
+
+
+
+import os
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import statsmodels.api as sm
+
+# Define the folder containing the forecast CSV files
+folder_path = 'forecast'
+
+# Get a list of all CSV files in the folder
+csv_files = [f for f in os.listdir(folder_path) if f.endswith('.csv')]
+
+# Dictionary to store aggregated data for each instrument
+instrument_data = {}
+
+# Iterate through each CSV file
+for csv_file in csv_files:
+    # Extract the date from the file name
+    date = csv_file.split('_')[1].split('.')[0]
+    
+    # Read the CSV file into a DataFrame
+    file_path = os.path.join(folder_path, csv_file)
+    df = pd.read_csv(file_path)
+    
+    # Print the columns of the DataFrame
+    print(f"Columns of the DataFrame for {csv_file}:")
+    print(df.columns)
+    
+    # Add the date column to the DataFrame
+    df['date'] = date
+    
+    # Calculate the differences for each forecast column and round to 2 decimal places
+    df['diff_forecast_lstm'] = (df['forecast_lstm'] - df['close yesterday']).round(2)
+    df['diff_forecast_momentum_strategy'] = (df['forecast_momentum_strategy'] - df['close yesterday']).round(2)
+    df['diff_forecast_moving_average'] = (df['forecast_moving_average'] - df['close yesterday']).round(2)
+    
+    # Calculate daily returns for the instrument
+    df['daily_return'] = df['close today'] / df['close yesterday'] - 1
+    
+    # Calculate the hit ratio for each forecast method
+    df['hit_lstm'] = np.sign(df['forecast_lstm'] - df['close yesterday']) == np.sign(df['close today'] - df['close yesterday'])
+    df['hit_momentum_strategy'] = np.sign(df['forecast_momentum_strategy'] - df['close yesterday']) == np.sign(df['close today'] - df['close yesterday'])
+    df['hit_moving_average'] = np.sign(df['forecast_moving_average'] - df['close yesterday']) == np.sign(df['close today'] - df['close yesterday'])
+    
+    # Iterate through each row in the DataFrame
+    for index, row in df.iterrows():
+        instrument = row['real instrument name']
+        
+        # If the instrument is not already in the dictionary, initialize it
+        if instrument not in instrument_data:
+            instrument_data[instrument] = []
+        
+        # Append the row data to the instrument's list
+        instrument_data[instrument].append(row)
+
+# Save the aggregated data for each instrument to separate files
+output_folder = 'aggregated_forecasts'
+os.makedirs(output_folder, exist_ok=True)
+
+plot_folder = 'plots'
+os.makedirs(plot_folder, exist_ok=True)
+
+# Define your portfolio with instrument weights
+portfolio_weights = {
+    'Instrument1': 0.4,
+    'Instrument2': 0.3,
+    'Instrument3': 0.3
+}
+
+# List to store portfolio returns
+portfolio_returns = []
+
+# Dictionary to store hit ratios
+hit_ratios = {
+    'lstm': [],
+    'momentum_strategy': [],
+    'moving_average': []
+}
+
+# Dictionary to store PnL for each strategy
+pnl = {
+    'lstm': [],
+    'momentum_strategy': [],
+    'moving_average': []
+}
+
+for instrument, data in instrument_data.items():
+    # Convert the list of rows to a DataFrame
+    instrument_df = pd.DataFrame(data)
+    
+    # Define the output file path
+    output_file = os.path.join(output_folder, f'{instrument}_forecasts.csv')
+    
+    # Save the DataFrame to a CSV file
+    instrument_df.to_csv(output_file, index=False)
+    
+    # Plot the differences
+    plt.figure(figsize=(10, 6))
+    plt.plot(instrument_df['date'], instrument_df['diff_forecast_lstm'], label='LSTM Difference', marker='o')
+    plt.plot(instrument_df['date'], instrument_df['diff_forecast_momentum_strategy'], label='Momentum Strategy Difference', marker='o')
+    plt.plot(instrument_df['date'], instrument_df['diff_forecast_moving_average'], label='Moving Average Difference', marker='o')
+    plt.xlabel('Date')
+    plt.ylabel('Difference')
+    plt.title(f'Differences for {instrument}')
+    plt.legend()
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+    
+    # Save the plot
+    plot_file = os.path.join(plot_folder, f'{instrument}_differences.png')
+    plt.savefig(plot_file)
+    plt.close()
+    
+    # Add the weighted daily returns to the portfolio returns
+    if instrument in portfolio_weights:
+        weighted_returns = instrument_df['daily_return'] * portfolio_weights[instrument]
+        portfolio_returns.append(weighted_returns)
+    
+    # Calculate hit ratios for each forecast method
+    hit_ratios['lstm'].append(instrument_df['hit_lstm'].mean())
+    hit_ratios['momentum_strategy'].append(instrument_df['hit_momentum_strategy'].mean())
+    hit_ratios['moving_average'].append(instrument_df['hit_moving_average'].mean())
+    
+    # Calculate PnL for each strategy
+    instrument_df['pnl_lstm'] = (instrument_df['forecast_lstm'] - instrument_df['close yesterday']) * instrument_df['daily_return']
+    instrument_df['pnl_momentum_strategy'] = (instrument_df['forecast_momentum_strategy'] - instrument_df['close yesterday']) * instrument_df['daily_return']
+    instrument_df['pnl_moving_average'] = (instrument_df['forecast_moving_average'] - instrument_df['close yesterday']) * instrument_df['daily_return']
+    
+    pnl['lstm'].append(instrument_df['pnl_lstm'])
+    pnl['momentum_strategy'].append(instrument_df['pnl_momentum_strategy'])
+    pnl['moving_average'].append(instrument_df['pnl_moving_average'])
+
+# Combine the portfolio returns into a single DataFrame
+portfolio_returns_df = pd.concat(portfolio_returns, axis=1)
+portfolio_returns_df['portfolio_return'] = portfolio_returns_df.sum(axis=1)
+
+# Calculate the cumulative returns of the portfolio
+portfolio_returns_df['cumulative_return'] = (1 + portfolio_returns_df['portfolio_return']).cumprod()
+
+# Calculate the running maximum of the cumulative returns
+portfolio_returns_df['running_max'] = portfolio_returns_df['cumulative_return'].cummax()
+
+# Calculate the drawdown
+portfolio_returns_df['drawdown'] = portfolio_returns_df['running_max'] - portfolio_returns_df['cumulative_return']
+portfolio_returns_df['drawdown_pct'] = portfolio_returns_df['drawdown'] / portfolio_returns_df['running_max']
+
+# Calculate the average portfolio return and standard deviation
+average_portfolio_return = portfolio_returns_df['portfolio_return'].mean()
+portfolio_return_std = portfolio_returns_df['portfolio_return'].std()
+
+# Define the risk-free rate (e.g., 0.01 for 1%)
+risk_free_rate = 0.01
+
+# Calculate the Sharpe ratio
+sharpe_ratio = (average_portfolio_return - risk_free_rate) / portfolio_return_std
+
+# Calculate the overall hit ratios
+overall_hit_ratios = {key: np.mean(values) for key, values in hit_ratios.items()}
+
+# Combine the PnL for each strategy into a single DataFrame
+pnl_df = pd.DataFrame({
+    'lstm': pd.concat(pnl['lstm']).reset_index(drop=True),
+    'momentum_strategy': pd.concat(pnl['momentum_strategy']).reset_index(drop=True),
+    'moving_average': pd.concat(pnl['moving_average']).reset_index(drop=True)
+})
+
+# Calculate the cumulative PnL for each strategy
+pnl_df['cumulative_pnl_lstm'] = pnl_df['lstm'].cumsum()
+pnl_df['cumulative_pnl_momentum_strategy'] = pnl_df['momentum_strategy'].cumsum()
+pnl_df['cumulative_pnl_moving_average'] = pnl_df['moving_average'].cumsum()
+
+# Calculate the total PnL for each strategy
+total_pnl = {
+    'lstm': pnl_df['lstm'].sum(),
+    'momentum_strategy': pnl_df['momentum_strategy'].sum(),
+    'moving_average': pnl_df['moving_average'].sum()
+}
+
+# Calculate Alpha and Beta
+benchmark_returns = portfolio_returns_df['portfolio_return']  # Assuming the portfolio return is the benchmark
+X = sm.add_constant(benchmark_returns)
+
+alphas = {}
+betas = {}
+for strategy in ['lstm', 'momentum_strategy', 'moving_average']:
+    y = pnl_df[strategy]
+    model = sm.OLS(y, X).fit()
+    alphas[strategy] = model.params['const']
+    betas[strategy] = model.params['portfolio_return']
+
+# Calculate Information Ratio
+information_ratios = {}
+for strategy in ['lstm', 'momentum_strategy', 'moving_average']:
+    excess_return = pnl_df[strategy] - benchmark_returns
+    tracking_error = excess_return.std()
+    information_ratios[strategy] = excess_return.mean() / tracking_error
+
+# Calculate Volatility
+volatility = {}
+for strategy in ['lstm', 'momentum_strategy', 'moving_average']:
+    volatility[strategy] = pnl_df[strategy].std()
+
+print(f"Sharpe Ratio: {sharpe_ratio}")
+print(f"Overall Hit Ratios: {overall_hit_ratios}")
+print(f"Total PnL: {total_pnl}")
+print(f"Alphas: {alphas}")
+print(f"Betas: {betas}")
+print(f"Information Ratios: {information_ratios}")
+print(f"Volatility: {volatility}")
+
+# Plot the drawdown
+plt.figure(figsize=(10, 6))
+plt.plot(portfolio_returns_df.index, portfolio_returns_df['drawdown_pct'], label='Drawdown', color='red')
+plt.xlabel('Date')
+plt.ylabel('Drawdown')
+plt.title('Portfolio Drawdown')
+plt.legend()
+plt.xticks(rotation=45)
+plt.tight_layout()
+
+# Save the drawdown plot
+drawdown_plot_file = os.path.join(plot_folder, 'portfolio_drawdown.png')
+plt.savefig(drawdown_plot_file)
+plt.close()
+
+# Plot the cumulative PnL for each strategy
+plt.figure(figsize=(10, 6))
+plt.plot(pnl_df.index, pnl_df['cumulative_pnl_lstm'], label='Cumulative PnL LSTM', marker='o')
+plt.plot(pnl_df.index, pnl_df['cumulative_pnl_momentum_strategy'], label='Cumulative PnL Momentum Strategy', marker='o')
+plt.plot(pnl_df.index, pnl_df['cumulative_pnl_moving_average'], label='Cumulative PnL Moving Average', marker='o')
+plt.xlabel('Date')
+plt.ylabel('Cumulative PnL')
+plt.title('Cumulative PnL for Each Strategy')
+plt.legend()
+plt.xticks(rotation=45)
+plt.tight_layout()
+
+# Save the cumulative PnL plot
+cumulative_pnl_plot_file = os.path.join(plot_folder, 'cumulative_pnl.png')
+plt.savefig(cumulative_pnl_plot_file)
+plt.close()
+
+print("Aggregated forecasts, plots, drawdown, and PnL saved successfully.")
