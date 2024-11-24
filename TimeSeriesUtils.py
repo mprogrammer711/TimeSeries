@@ -353,6 +353,11 @@ for csv_file in csv_files:
     # Add the date column to the DataFrame
     df['date'] = date
     
+    # Calculate the differences for each forecast column
+    df['diff_forecast_lstm'] = df['forecast_lstm'] - df['close yesterday']
+    df['diff_forecast_momentum_strategy'] = df['forecast_momentum_strategy'] - df['close yesterday']
+    df['diff_forecast_moving_average'] = df['forecast_moving_average'] - df['close yesterday']
+    
     # Iterate through each row in the DataFrame
     for index, row in df.iterrows():
         instrument = row['real instrument name']
