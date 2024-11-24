@@ -331,6 +331,7 @@ plt.show()
 
 import os
 import pandas as pd
+import matplotlib.pyplot as plt
 
 # Define the folder containing the forecast CSV files
 folder_path = 'forecast'
@@ -350,13 +351,17 @@ for csv_file in csv_files:
     file_path = os.path.join(folder_path, csv_file)
     df = pd.read_csv(file_path)
     
+    # Print the columns of the DataFrame
+    print(f"Columns of the DataFrame for {csv_file}:")
+    print(df.columns)
+    
     # Add the date column to the DataFrame
     df['date'] = date
     
-    # Calculate the differences for each forecast column
-    df['diff_forecast_lstm'] = df['forecast_lstm'] - df['close yesterday']
-    df['diff_forecast_momentum_strategy'] = df['forecast_momentum_strategy'] - df['close yesterday']
-    df['diff_forecast_moving_average'] = df['forecast_moving_average'] - df['close yesterday']
+    # Calculate the differences for each forecast column and round to 2 decimal places
+    df['diff_forecast_lstm'] = (df['forecast_lstm'] - df['close yesterday']).round(2)
+    df['diff_forecast_momentum_strategy'] = (df['forecast_momentum_strategy'] - df['close yesterday']).round(2)
+    df['diff_forecast_moving_average'] = (df['forecast_moving_average'] - df['close yesterday']).round(2)
     
     # Iterate through each row in the DataFrame
     for index, row in df.iterrows():
@@ -373,6 +378,9 @@ for csv_file in csv_files:
 output_folder = 'aggregated_forecasts'
 os.makedirs(output_folder, exist_ok=True)
 
+plot_folder = 'plots'
+os.makedirs(plot_folder, exist_ok=True)
+
 for instrument, data in instrument_data.items():
     # Convert the list of rows to a DataFrame
     instrument_df = pd.DataFrame(data)
@@ -382,5 +390,22 @@ for instrument, data in instrument_data.items():
     
     # Save the DataFrame to a CSV file
     instrument_df.to_csv(output_file, index=False)
+    
+    # Plot the differences
+    plt.figure(figsize=(10, 6))
+    plt.plot(instrument_df['date'], instrument_df['diff_forecast_lstm'], label='LSTM Difference', marker='o')
+    plt.plot(instrument_df['date'], instrument_df['diff_forecast_momentum_strategy'], label='Momentum Strategy Difference', marker='o')
+    plt.plot(instrument_df['date'], instrument_df['diff_forecast_moving_average'], label='Moving Average Difference', marker='o')
+    plt.xlabel('Date')
+    plt.ylabel('Difference')
+    plt.title(f'Differences for {instrument}')
+    plt.legend()
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+    
+    # Save the plot
+    plot_file = os.path.join(plot_folder, f'{instrument}_differences.png')
+    plt.savefig(plot_file)
+    plt.close()
 
-print("Aggregated forecasts saved successfully.")
+print("Aggregated forecasts and plots saved successfully.")
